@@ -860,12 +860,15 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('wheel', e => {
   e.preventDefault();
   const ds = e.deltaY < 0 ? 1.1 : (1/1.1);
-  const ox = e.clientX - W/2 - S.panX;
-  const oy = e.clientY - H/2 - S.panY;
+  const oldZoom = S.zoom;
   S.zoom = Math.max(1, Math.min(S.zoom * ds, 12));
-  if (S.zoom >= 1 && S.zoom <= 12) {
-    S.panX -= ox * (ds - 1);
-    S.panY -= oy * (ds - 1);
+  
+  const actualDs = S.zoom / oldZoom;
+  if (actualDs !== 1) {
+    const ox = e.clientX - W/2 - S.panX;
+    const oy = e.clientY - H/2 - S.panY;
+    S.panX -= ox * (actualDs - 1);
+    S.panY -= oy * (actualDs - 1);
   }
   clampPan();
 }, {passive:false});
