@@ -367,16 +367,11 @@ TURFS.forEach((tf,i) => {
       const earliest = aJoin + Math.max(3, Math.round(rr(4,30)*cd.ten));
       if (earliest < MONTHS) aLeave = Math.round(rr(earliest, MONTHS-1));
     }
-    const rOff = rr(0.04, 0.18); // Minimum distance from center
+    const rOff = rr(0.08, 0.28); // Increased spread, minimum distance from center
     const aOff = rr(0, Math.PI * 2);
     let aLat = lat + Math.sin(aOff) * rOff;
     let aLon = lon + Math.cos(aOff) * rOff * 1.6;
     let isDistant = false;
-    if (rnd() < 0.005) { // 1 or 2 examples of distant hires across the whole dataset
-      isDistant = true;
-      aLat = rr(50.0, 58.0);
-      aLon = rr(-6.0, 1.5);
-    }
     
     advisers.push({
       id:'ADV-'+String(++advCount).padStart(4,'0'),
@@ -398,6 +393,21 @@ TURFS.forEach((tf,i) => {
     seed: rnd()*1000
   });
 });
+
+if (recruiters.length > 2) {
+  // Create exactly one clear cross-territory hire for demonstration
+  // We'll link an adviser from recruiter 0 to the location of recruiter N-1
+  const r1 = recruiters[0];
+  const r2 = recruiters[recruiters.length - 1];
+  if (r1.advisers.length > 0) {
+    const a = r1.advisers[0];
+    const rOff = rr(0.08, 0.28);
+    const aOff = rr(0, Math.PI * 2);
+    a.lat = r2.lat + Math.sin(aOff) * rOff;
+    a.lon = r2.lon + Math.cos(aOff) * rOff * 1.6;
+    a.distant = true;
+  }
+}
 
 /* ---------- derived state at time t ---------- */
 const tenureOf   = (e,t) => Math.max(0, t - e.join);
@@ -691,7 +701,10 @@ function drawSystem(r, t, alpha){
         cx.stroke();
       } else {
         const [ax, ay] = proj(a.lon, a.lat);
-        if (a.distant) cx.setLineDash([2, 5]); // Mark distant hires with dashed line
+        if (a.distant) {
+          cx.setLineDash([2, 5]); // Mark distant hires with dashed line
+          cx.strokeStyle = `rgba(255, 60, 60, ${alpha * 0.8})`; // Warning red tether
+        }
         cx.beginPath();
         cx.moveTo(x, y);
         cx.lineTo(ax, ay);
@@ -699,12 +712,20 @@ function drawSystem(r, t, alpha){
         if (a.distant) cx.setLineDash([]);
         
         if (!gone) {
-          const travel = ((spin * 0.4) + (a.ph / (Math.PI*2))) % 1;
+          const travel = ((spin * 0.2) + (a.ph / (Math.PI*2))) % 1;
           const px = ax + (x - ax) * travel;
           const py = ay + (y - ay) * travel;
-          const sp = glow(tint.r, tint.g, tint.b);
-          // Reduced pulse size
-          blob(cx, px, py, 1.2 * pz, sp, alpha * (Math.sin(travel*Math.PI)) * 0.6);
+          const sp = a.distant ? glow(255, 60, 60) : glow(tint.r, tint.g, tint.b);
+          blob(cx, px, py, 0.7 * pz, sp, alpha * (Math.sin(travel*Math.PI)) * 0.3);
+          
+          if (a.distant) {
+            const ripple = (spin * 1.5 + a.ph) % 1;
+            cx.beginPath();
+            cx.arc(ax, ay, (5 + ripple * 20) * pz, 0, Math.PI*2);
+            cx.strokeStyle = `rgba(255, 60, 60, ${alpha * (1 - ripple) * 0.8})`;
+            cx.lineWidth = 1.0;
+            cx.stroke();
+          }
         }
       }
       cx.restore();
@@ -768,7 +789,7 @@ function drawSystem(r, t, alpha){
         py = y + Math.sin(ang)*orb0*a.tilt;
       } else {
         [px, py] = proj(a.lon, a.lat);
-        p_alpha = 0.75 + 0.25 * Math.sin(spin*1.5 + a.ph);
+        p_alpha = 0.4 + 0.15 * Math.sin(spin*1.0 + a.ph);
       }
       const sp = glow(cr,cg,cb);
       blob(cx, px,py, ar*3.8, sp, alpha*isoDim*.20*p_alpha);
