@@ -128,6 +128,54 @@ h1 em{font-style:italic;color:var(--accent)}
   color:var(--faint);cursor:pointer;font:inherit;font-size:14px;line-height:1;padding:3px}
 .close:hover{color:var(--ink)}
 
+/* ---------- early warning ---------- */
+.early-warning {
+  position:fixed; bottom:74px; left:34px; z-index:7;
+}
+.ew-toggle {
+  background:var(--panel); border:1px solid var(--rule); padding:8px 14px; border-radius:16px;
+  color:var(--ink); font-family:inherit; font-size:12px; cursor:pointer;
+  display:flex; align-items:center; gap:8px; letter-spacing:0.05em; transition:.2s;
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+}
+.ew-toggle:hover { background:rgba(255,255,255,0.05); }
+.alert-pulse {
+  width:8px; height:8px; background:#ff9b7a; border-radius:50%; box-shadow:0 0 8px #ff9b7a;
+}
+.ew-toggle .badge {
+  background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:8px; font-size:10px; font-weight:500;
+}
+.ew-panel {
+  position: absolute; bottom: 100%; left: 0; margin-bottom: 12px;
+  background:var(--panel); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  border:1px solid var(--rule); padding:16px; border-radius:6px; width:230px;
+  opacity:0; pointer-events:none; transform:translateY(10px); transition:.25s ease;
+}
+.early-warning[data-expanded="true"] .ew-panel {
+  opacity:1; pointer-events:auto; transform:translateY(0);
+}
+.early-warning h3 {
+  font-family:var(--serif); font-size:16px; margin:0 0 10px 0; color:var(--ink); font-weight:400;
+}
+.ew-rows { display:flex; flex-direction:column; gap:6px; }
+.ew-btn {
+  display:flex; align-items:center; gap:10px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1);
+  padding:8px 12px; border-radius:4px; color:var(--faint); cursor:pointer; font-family:inherit; text-align:left;
+  transition: .15s;
+}
+.ew-btn:hover { background:rgba(255,255,255,0.05); }
+.ew-btn[aria-pressed="true"] {
+  background: rgba(255,155,122,0.15); border-color: rgba(255,155,122,0.4); color: #ff9b7a;
+}
+.ew-btn[aria-pressed="true"] .num { color:#ff9b7a; }
+.ew-btn .num {
+  font-family:"IBM Plex Mono",monospace; font-size:14px; font-weight:500; color:var(--ink);
+  min-width:24px; text-align:right;
+}
+.ew-btn .lbl { font-size:10px; letter-spacing:0.04em; line-height:1.2; text-transform:uppercase; }
+.ew-btn#btnUncovered .num { font-size:14px; color:rgba(255,217,160,0.8); }
+.ew-btn#btnUncovered[aria-pressed="true"] { background: rgba(255,217,160,0.15); border-color: rgba(255,217,160,0.4); color: #ffd9a0; }
+
 /* ---------- timeline ---------- */
 .time{
   position:fixed;left:34px;right:34px;bottom:26px;z-index:5;height:34px;
@@ -186,6 +234,7 @@ h1 em{font-style:italic;color:var(--accent)}
     background:var(--panel);border:1px solid var(--rule);color:var(--ink);font:inherit;font-size:9.5px;
     letter-spacing:.18em;text-transform:uppercase;padding:8px 11px;cursor:pointer}
   .insp{left:20px;right:20px;width:auto;bottom:70px}
+  .early-warning{bottom: 60px; left: 20px;}
   .time{left:20px;right:20px;bottom:18px}
   .stamp{min-width:80px;font-size:10px}
   .ticks{display:none}
@@ -198,6 +247,29 @@ h1 em{font-style:italic;color:var(--accent)}
 <body>
 <canvas id="sky" aria-label="Star map of recruiter territories across the United Kingdom"></canvas>
 <div class="frame" aria-hidden="true"></div>
+
+<div class="early-warning" id="ewContainer" data-expanded="false">
+  <button id="ewToggle" class="ew-toggle">
+    <span class="alert-pulse"></span> Early Warning <span class="badge" id="ewTotalBadge">0</span>
+  </button>
+  <div class="ew-panel">
+     <h3>Early Warnings</h3>
+     <div class="ew-rows">
+       <button class="ew-btn" id="btnUncovered" aria-pressed="false">
+         <span class="num">⚠</span>
+         <span class="lbl">Uncovered Areas</span>
+       </button>
+       <button class="ew-btn" id="btnDeadR" aria-pressed="false">
+         <span class="num" id="ewDeadR">0</span>
+         <span class="lbl">Collapsed Territories</span>
+       </button>
+       <button class="ew-btn" id="btnDeadA" aria-pressed="false">
+         <span class="num" id="ewDeadA">0</span>
+         <span class="lbl">Ejected Advisers</span>
+       </button>
+     </div>
+  </div>
+</div>
 
 <div class="plate">
   <p class="eyebrow"><span>Recruitment cartography</span><i></i><span class="plateno">Plate I</span></p>
@@ -336,6 +408,25 @@ const TURFS = [
   ['Devon',50.72,-3.70],['Cornwall',50.38,-4.78],['Belfast & Antrim',54.66,-6.02],['Down & Armagh',54.34,-6.42]
 ];
 
+function pointInPolygon(lon, lat, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 2; i < polygon.length; j = i, i += 2) {
+    const xi = polygon[i], yi = polygon[i+1];
+    const xj = polygon[j], yj = polygon[j+1];
+    const intersect = ((yi > lat) != (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function pointInUK(lon, lat) {
+  for (const region in UK) {
+    for (const poly of UK[region]) {
+      if (pointInPolygon(lon, lat, poly)) return true;
+    }
+  }
+  return false;
+}
+
 const MONTHS = 60;                       // Sep 2021 → Aug 2026
 const M0 = {y:2021, m:8};                // 0-indexed month 8 = Sep
 const MNAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -367,11 +458,17 @@ TURFS.forEach((tf,i) => {
       const earliest = aJoin + Math.max(3, Math.round(rr(4,30)*cd.ten));
       if (earliest < MONTHS) aLeave = Math.round(rr(earliest, MONTHS-1));
     }
-    const rOff = rr(0.08, 0.28); // Increased spread, minimum distance from center
-    const aOff = rr(0, Math.PI * 2);
-    let aLat = lat + Math.sin(aOff) * rOff;
-    let aLon = lon + Math.cos(aOff) * rOff * 1.6;
-    let isDistant = false;
+    let aLat, aLon, isDistant = false;
+    let valid = false, attempts = 0;
+    while (!valid && attempts < 100) {
+      const rOff = rr(0.08, 0.28);
+      const aOff = rr(0, Math.PI * 2);
+      aLat = lat + Math.sin(aOff) * rOff;
+      aLon = lon + Math.cos(aOff) * rOff * 1.6;
+      if (pointInUK(aLon, aLat)) valid = true;
+      attempts++;
+    }
+    if (!valid) { aLat = lat; aLon = lon; } // Fallback safely
     
     advisers.push({
       id:'ADV-'+String(++advCount).padStart(4,'0'),
@@ -401,10 +498,16 @@ if (recruiters.length > 2) {
   const r2 = recruiters[recruiters.length - 1];
   if (r1.advisers.length > 0) {
     const a = r1.advisers[0];
-    const rOff = rr(0.08, 0.28);
-    const aOff = rr(0, Math.PI * 2);
-    a.lat = r2.lat + Math.sin(aOff) * rOff;
-    a.lon = r2.lon + Math.cos(aOff) * rOff * 1.6;
+    let valid = false, attempts = 0;
+    while (!valid && attempts < 100) {
+      const rOff = rr(0.08, 0.28);
+      const aOff = rr(0, Math.PI * 2);
+      a.lat = r2.lat + Math.sin(aOff) * rOff;
+      a.lon = r2.lon + Math.cos(aOff) * rOff * 1.6;
+      if (pointInUK(a.lon, a.lat)) valid = true;
+      attempts++;
+    }
+    if (!valid) { a.lat = r2.lat; a.lon = r2.lon; }
     a.distant = true;
   }
 }
@@ -465,8 +568,15 @@ const proj = (lon,lat) => [
 ];
 
 let bgStars=[];
+let hatchPattern = null;
 
 function fit(){
+  const hatchCanvas = document.createElement('canvas');
+  hatchCanvas.width = 12; hatchCanvas.height = 12;
+  const hcx = hatchCanvas.getContext('2d');
+  hcx.strokeStyle = 'rgba(255, 217, 160, 0.4)'; hcx.lineWidth = 1.5;
+  hcx.beginPath(); hcx.moveTo(-2,14); hcx.lineTo(14,-2); hcx.stroke();
+  hatchPattern = cx.createPattern(hatchCanvas, 'repeat');
   S.panX = 0; S.panY = 0; S.zoom = 1;
   DPR = Math.min(2, window.devicePixelRatio||1);
   W = cv.clientWidth; H = cv.clientHeight;
@@ -616,6 +726,49 @@ function draw(ts){
     cx.restore();
   }
 
+  // ---- early warning counts
+  let deadRCount = 0;
+  let deadACount = 0;
+  for (const r of recruiters) {
+    if (arrivedAt(r, t)) {
+      if (goneAt(r, t)) deadRCount++;
+      for (const a of r.advisers) {
+        if (arrivedAt(a, t) && goneAt(a, t)) deadACount++;
+      }
+    }
+  }
+  ewDeadR.textContent = deadRCount;
+  ewDeadA.textContent = deadACount;
+  ewTotalBadge.textContent = deadRCount + deadACount;
+
+  // ---- warning overlay for uncovered areas
+  const pz = Math.pow(S.zoom, 0.45);
+  if (S.warningActive === 'uncovered' && S.vizMode === 'map') {
+    cx.save();
+    cx.beginPath();
+    for (const [k,rings] of Object.entries(UK)){
+      rings.forEach(r=>ringPath(cx,r));
+    }
+    cx.fillStyle = hatchPattern;
+    cx.fill();
+    cx.lineWidth = 1; cx.strokeStyle = 'rgba(255, 217, 160, 0.8)'; cx.stroke();
+    
+    cx.globalCompositeOperation = 'destination-out';
+    for (const r of recruiters) {
+      if (arrivedAt(r, t) && !goneAt(r, t)) {
+        const [x,y] = proj(r.lon, r.lat);
+        cx.beginPath();
+        cx.arc(x, y, 40 * pz, 0, Math.PI*2);
+        cx.fillStyle = '#fff'; cx.fill();
+        const g = cx.createRadialGradient(x,y,20*pz, x,y,45*pz);
+        g.addColorStop(0, '#fff'); g.addColorStop(1, 'rgba(255,255,255,0)');
+        cx.beginPath(); cx.arc(x,y,45*pz, 0, Math.PI*2);
+        cx.fillStyle = g; cx.fill();
+      }
+    }
+    cx.restore();
+  }
+
   // ---- systems
   const dimAll = S.sel !== null;
   const order = recruiters.map((r,i)=>i)
@@ -630,6 +783,7 @@ function draw(ts){
       if (S.sel.type === 'r' && S.sel.i !== i) alpha = 0.34;
       if (S.sel.type === 'a' && S.sel.i !== i) alpha = 0.34;
     }
+    if (S.warningActive === 'dead-r' && !goneAt(recruiters[i], t)) alpha *= 0.15;
     drawSystem(recruiters[i], t, alpha);
   }
   cx.restore();
@@ -755,13 +909,14 @@ function drawSystem(r, t, alpha){
   }
 
   // ---------- the star ----------
+  const starDim = (S.warningActive === 'dead-a') ? 0.15 : 1;
   if (!dead){
     const sp = glow(tint.r,tint.g,tint.b);
-    blob(cx, x, y, R*4.5, sp, alpha*.08);
-    blob(cx, x, y, R*2.7, sp, alpha*.25);
-    blob(cx, x, y, R*1.10, sp, alpha*.60);
+    blob(cx, x, y, R*4.5, sp, alpha*starDim*.08);
+    blob(cx, x, y, R*2.7, sp, alpha*starDim*.25);
+    blob(cx, x, y, R*1.10, sp, alpha*starDim*.60);
   } else {
-    drawBlackHole(x,y,R,spin,alpha*(0.42+0.58*Math.exp(-(t-r.leave)/20)),r);
+    drawBlackHole(x,y,R,spin,alpha*starDim*(0.42+0.58*Math.exp(-(t-r.leave)/20)),r);
   }
 
   // ---------- advisers ----------
@@ -772,6 +927,11 @@ function drawSystem(r, t, alpha){
     let isoDim = (S.isolate!==null && a.ch!==S.isolate) ? .06 : 1;
     if (S.sel !== null && S.sel.type === 'a') {
       if (recruiters[S.sel.i] !== r || recruiters[S.sel.i].advisers[S.sel.j] !== a) isoDim *= 0.15;
+    }
+    if (S.warningActive === 'dead-r') {
+      if (!goneAt(r, t)) isoDim *= 0.15;
+    } else if (S.warningActive === 'dead-a') {
+      if (!gone) isoDim *= 0.15;
     }
     if (isoDim<1 && S.isolate!==null && a.ch!==S.isolate && alpha*isoDim < .02) continue;
 
@@ -1111,6 +1271,34 @@ bS.onclick=()=>setScheme('spectral'); bC.onclick=()=>setScheme('cat');
 const bind=(id,k)=>{const el=document.getElementById(id);el.onchange=()=>{S[k]=el.checked}};
 bind('tDeparted','showDeparted'); bind('tOrbits','showOrbits');
 bind('tLabels','showLabels'); bind('tGrid','showGrid');
+
+/* ---------- early warnings ---------- */
+S.warningActive = null;
+const ewContainer = document.getElementById('ewContainer');
+const ewToggle = document.getElementById('ewToggle');
+const ewTotalBadge = document.getElementById('ewTotalBadge');
+const ewDeadR = document.getElementById('ewDeadR');
+const ewDeadA = document.getElementById('ewDeadA');
+const btnUncovered = document.getElementById('btnUncovered');
+const btnDeadR = document.getElementById('btnDeadR');
+const btnDeadA = document.getElementById('btnDeadA');
+
+ewToggle.onclick = () => {
+  const isExp = ewContainer.getAttribute('data-expanded') === 'true';
+  ewContainer.setAttribute('data-expanded', !isExp);
+};
+function setWarning(type) {
+  S.warningActive = S.warningActive === type ? null : type;
+  btnUncovered.setAttribute('aria-pressed', S.warningActive === 'uncovered');
+  btnDeadR.setAttribute('aria-pressed', S.warningActive === 'dead-r');
+  btnDeadA.setAttribute('aria-pressed', S.warningActive === 'dead-a');
+  if (S.warningActive === 'uncovered') {
+    S.vizMode = 'map'; bMO.setAttribute('aria-pressed','false'); bMM.setAttribute('aria-pressed','true');
+  }
+}
+btnUncovered.onclick = () => setWarning('uncovered');
+btnDeadR.onclick = () => setWarning('dead-r');
+btnDeadA.onclick = () => setWarning('dead-a');
 
 /* ---------- timeline ---------- */
 const scrub=document.getElementById('scrub'), stampEl=document.getElementById('stamp');
