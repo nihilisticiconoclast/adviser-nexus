@@ -226,6 +226,14 @@ h1 em{font-style:italic;color:var(--accent)}
   </div>
 
   <div class="sect">
+    <h2>Adviser view</h2>
+    <div class="seg" role="group" aria-label="Visualization Mode">
+      <button id="modeOrbit" aria-pressed="true">Orbit</button>
+      <button id="modeMap" aria-pressed="false">Map</button>
+    </div>
+  </div>
+
+  <div class="sect">
     <h2>Joiner channel <span style="color:var(--faint)">— 8 classes</span></h2>
     <div class="seg" role="group" aria-label="Colour scheme">
       <button id="schemeSpectral" aria-pressed="true">Spectral</button>
@@ -366,7 +374,9 @@ TURFS.forEach((tf,i) => {
       ph: rr(0,Math.PI*2),
       dir: rnd()<.14 ? -1 : 1,
       wob: 1.0,
-      tilt: 1.0                                               // perfect circular electron orbits
+      tilt: 1.0,                                              // perfect circular electron orbits
+      lat: (rnd() < 0.15) ? (rnd() < 0.5 ? rr(53.8, 54.5) : rr(49.0, 50.0)) : (lat + rr(-0.4, 0.4)),
+      lon: (rnd() < 0.15) ? (rnd() < 0.5 ? rr(-5.5, -4.0) : rr(-2.5, 3.0)) : (lon + rr(-0.4, 0.4))
     });
   }
   recruiters.push({
@@ -502,6 +512,7 @@ function blob(cvx,x,y,rad,col,alpha){
 const S = {
   t: MONTHS-1, playing:false, tf:MONTHS-1,
   showDeparted:true, showOrbits:true, showLabels:false, showGrid:true,
+  vizMode: 'orbit',
   isolate:null, hover:null, sel:null, mx:-1, my:-1,
   panX:0, panY:0, zoom:1, isDragging:false, dragDist:0
 };
@@ -543,10 +554,10 @@ function draw(ts){
   // ---- glowing abstract landmass
   cx.save();
   cx.globalCompositeOperation='lighter';
-  cx.strokeStyle = 'rgba(120, 160, 220, 0.25)';
-  cx.lineWidth = 1.2;
-  cx.shadowBlur = 15;
-  cx.shadowColor = 'rgba(120, 180, 255, 0.7)';
+  cx.strokeStyle = 'rgba(100, 140, 200, 0.25)';
+  cx.lineWidth = 2.0;
+  cx.shadowBlur = 20;
+  cx.shadowColor = 'rgba(120, 180, 255, 0.6)';
   cx.beginPath();
   for (const [k,rings] of Object.entries(UK)){
     if (k==='Ireland') continue;
@@ -554,11 +565,13 @@ function draw(ts){
   }
   cx.stroke();
   
-  cx.strokeStyle = 'rgba(180, 210, 245, 0.4)';
-  cx.lineWidth = 0.5;
-  cx.shadowBlur = 0;
+  // Tighter inner blur instead of sharp stroke
+  cx.strokeStyle = 'rgba(160, 190, 230, 0.35)';
+  cx.lineWidth = 1.0;
+  cx.shadowBlur = 8;
   cx.stroke();
 
+  cx.shadowBlur = 0;
   cx.strokeStyle = 'rgba(80, 110, 150, 0.15)';
   cx.beginPath();
   UK['Ireland'].forEach(r=>ringPath(cx,r));
@@ -619,11 +632,12 @@ function draw(ts){
 }
 
 function drawSystem(r, t, alpha){
+  const pz = Math.pow(S.zoom, 0.45); // Perspective zoom
   const [x,y] = proj(r.lon, r.lat);
   const dead  = goneAt(r,t);
   const rev   = bookRevenue(r,t);
-  const R     = starR(rev);
-  const base  = R*1.55 + 8.5;
+  const R     = starR(rev) * pz;
+  const base  = (starR(rev)*1.55 + 8.5) * pz;
   const tint  = starTint(r,t);
   const L     = lum(tenureOf(r,t));
   // Under isolation a star dims in proportion to how little of its book is that channel,
@@ -636,23 +650,33 @@ function drawSystem(r, t, alpha){
   alpha *= chAlpha;
   const spin  = reduced ? 0 : clock;
 
-  // ---------- orbit tracks ----------
+  // ---------- orbit tracks & map tethers ----------
   if (S.showOrbits){
     for (const a of r.advisers){
       if (!arrivedAt(a,t)) continue;
       const gone = goneAt(a,t);
       if (gone && !S.showDeparted) continue;
       if (S.isolate!==null && a.ch!==S.isolate) continue;
-      const ten = tenureOf(a, gone ? a.leave : t);
-      const orb = orbitR(ten, base)*a.wob;
+      
       cx.save();
       cx.globalAlpha = alpha * (gone ? .13 : .23);
       cx.strokeStyle = gone ? 'rgba(150,160,180,1)' : `rgba(${tint.r},${tint.g},${tint.b},1)`;
       cx.lineWidth = .55;
       if (gone) cx.setLineDash([1.5,4.5]);           // the gap it left
-      cx.beginPath();
-      cx.ellipse(x,y,orb,orb*a.tilt,a.ph*.3,0,Math.PI*2);
-      cx.stroke();
+
+      if (S.vizMode === 'orbit') {
+        const ten = tenureOf(a, gone ? a.leave : t);
+        const orb = orbitR(ten, base)*a.wob;
+        cx.beginPath();
+        cx.ellipse(x,y,orb,orb*a.tilt,a.ph*.3,0,Math.PI*2);
+        cx.stroke();
+      } else {
+        const [ax, ay] = proj(a.lon, a.lat);
+        cx.beginPath();
+        cx.moveTo(x, y);
+        cx.lineTo(ax, ay);
+        cx.stroke();
+      }
       cx.restore();
     }
   }
@@ -663,7 +687,7 @@ function drawSystem(r, t, alpha){
     let maxOrb = base;
     for (const a of r.advisers) if (arrivedAt(a,t))
       maxOrb = Math.max(maxOrb, orbitR(tenureOf(a, goneAt(a,t)?a.leave:t), base)*a.wob);
-    const rr3 = maxOrb + 13;
+    const rr3 = maxOrb + 13 * pz;
     cx.save();
     cx.strokeStyle='rgba(255,217,160,.55)'; cx.lineWidth=.7;
     cx.setLineDash([2,4]);
@@ -700,36 +724,51 @@ function drawSystem(r, t, alpha){
     const ten  = tenureOf(a, gone ? a.leave : t);
     const orb0 = orbitR(ten, base)*a.wob;
     const aRev = revenueOf(a,t);
-    const ar   = advR(aRev);
+    const ar   = advR(aRev) * pz;
     const [cr,cg,cb] = hex2rgb(chColour(a.ch));
     const ang  = a.ph + a.dir*(spin*(0.30 + 0.55/(1+ten*0.05)) + t*0.22);
 
     if (!gone){
-      const px = x + Math.cos(ang)*orb0;
-      const py = y + Math.sin(ang)*orb0*a.tilt;
+      let px, py, p_alpha = 1.0;
+      if (S.vizMode === 'orbit') {
+        px = x + Math.cos(ang)*orb0;
+        py = y + Math.sin(ang)*orb0*a.tilt;
+      } else {
+        [px, py] = proj(a.lon, a.lat);
+        p_alpha = 0.6 + 0.4 * Math.sin(spin*2.0 + a.ph);
+      }
       const sp = glow(cr,cg,cb);
-      blob(cx, px,py, ar*3.8, sp, alpha*isoDim*.20);
-      blob(cx, px,py, ar*1.40, sp, alpha*isoDim*.92);
+      blob(cx, px,py, ar*3.8, sp, alpha*isoDim*.20*p_alpha);
+      blob(cx, px,py, ar*1.40, sp, alpha*isoDim*.92*p_alpha);
     } else {
       /* EJECTION — the body slips its orbit and drifts out on a fading tail.
          Position persists long enough to be counted, never long enough to mislead. */
+      let px, py, ea, escape;
       const since = t - a.leave;                      // months since departure
       const k = Math.min(1, since/16);
-      const escape = orb0 * (1 + k*1.35);
       const fade = Math.max(0, 1-k) * .55 + .06;
-      const ea = a.ph + a.dir*(spin*.16 + a.leave*0.22 + k*0.9);
-      const px = x + Math.cos(ea)*escape;
-      const py = y + Math.sin(ea)*escape*a.tilt;
       const dr = cr*.42+120, dg = cg*.42+124, db = cb*.42+132;   // drained of colour
       const sp = glow(dr|0,dg|0,db|0);
-      // tail, trailing back down the escape path
-      for (let s=1;s<=6;s++){
-        const kk = Math.max(0,k - s*0.055);
-        const es = orb0*(1+kk*1.35);
-        const an = a.ph + a.dir*(spin*.16 + a.leave*0.22 + kk*0.9);
-        blob(cx, x+Math.cos(an)*es, y+Math.sin(an)*es*a.tilt,
-             ar*(1.2-s*.13), sp, alpha*isoDim*fade*(.16-s*.024));
+
+      if (S.vizMode === 'orbit') {
+        escape = orb0 * (1 + k*1.35);
+        ea = a.ph + a.dir*(spin*.16 + a.leave*0.22 + k*0.9);
+        px = x + Math.cos(ea)*escape;
+        py = y + Math.sin(ea)*escape*a.tilt;
+        
+        // tail, trailing back down the escape path
+        for (let s=1;s<=6;s++){
+          const kk = Math.max(0,k - s*0.055);
+          const es = orb0*(1+kk*1.35);
+          const an = a.ph + a.dir*(spin*.16 + a.leave*0.22 + kk*0.9);
+          blob(cx, x+Math.cos(an)*es, y+Math.sin(an)*es*a.tilt,
+               ar*(1.2-s*.13), sp, alpha*isoDim*fade*(.16-s*.024));
+        }
+      } else {
+        const [mx, my] = proj(a.lon, a.lat);
+        px = mx; py = my + k*30*pz;
       }
+      
       blob(cx, px,py, ar*2.1, sp, alpha*isoDim*fade*.10);
       blob(cx, px,py, ar*0.92, sp, alpha*isoDim*fade*.42);
     }
@@ -790,12 +829,13 @@ function drawBlackHole(x,y,R,spin,alpha,r){
    ============================================================ */
 function hit(mx,my){
   let best=null, bd=1e9;
+  const pz = Math.pow(S.zoom, 0.45);
   for (let i=0;i<recruiters.length;i++){
     const r=recruiters[i];
     if (!arrivedAt(r,S.t)) continue;
     const [x,y]=proj(r.lon,r.lat);
     const d=Math.hypot(mx-x,my-y);
-    const rad=Math.max(15, starR(bookRevenue(r,S.t))*2.2);
+    const rad=Math.max(15, (starR(bookRevenue(r,S.t)) * pz)*2.2);
     if (d<rad && d<bd){bd=d;best=i}
   }
   return best;
@@ -941,6 +981,11 @@ function syncChips(){
   });
 }
 syncChips();
+
+/* ---------- mode ---------- */
+const bMO=document.getElementById('modeOrbit'), bMM=document.getElementById('modeMap');
+bMO.onclick=()=>{S.vizMode='orbit';bMO.setAttribute('aria-pressed','true');bMM.setAttribute('aria-pressed','false')}
+bMM.onclick=()=>{S.vizMode='map';bMO.setAttribute('aria-pressed','false');bMM.setAttribute('aria-pressed','true')}
 
 /* ---------- scheme ---------- */
 const bS=document.getElementById('schemeSpectral'), bC=document.getElementById('schemeCat');
