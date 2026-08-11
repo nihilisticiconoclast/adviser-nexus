@@ -614,7 +614,14 @@ function draw(ts){
 
   cx.save();
   cx.globalCompositeOperation='lighter';
-  for (const i of order) drawSystem(recruiters[i], t, dimAll && S.sel!==i ? .34 : 1);
+  for (const i of order) {
+    let alpha = 1;
+    if (dimAll) {
+      if (S.sel.type === 'r' && S.sel.i !== i) alpha = 0.34;
+      if (S.sel.type === 'a' && S.sel.i !== i) alpha = 0.34;
+    }
+    drawSystem(recruiters[i], t, alpha);
+  }
   cx.restore();
 
   // ---- labels: biggest book wins the space, the rest stand down
@@ -705,7 +712,7 @@ function drawSystem(r, t, alpha){
   }
 
   // ---------- selection reticle ----------
-  if (S.sel!==null && recruiters[S.sel]===r){
+  if (S.sel!==null && S.sel.type === 'r' && recruiters[S.sel.i]===r){
     alpha = Math.max(alpha, .85);
     let maxOrb = base;
     for (const a of r.advisers) if (arrivedAt(a,t))
@@ -741,7 +748,10 @@ function drawSystem(r, t, alpha){
     if (!arrivedAt(a,t)) continue;
     const gone = goneAt(a,t);
     if (gone && !S.showDeparted) continue;
-    const isoDim = (S.isolate!==null && a.ch!==S.isolate) ? .06 : 1;
+    let isoDim = (S.isolate!==null && a.ch!==S.isolate) ? .06 : 1;
+    if (S.sel !== null && S.sel.type === 'a') {
+      if (recruiters[S.sel.i] !== r || recruiters[S.sel.i].advisers[S.sel.j] !== a) isoDim *= 0.15;
+    }
     if (isoDim<1 && S.isolate!==null && a.ch!==S.isolate && alpha*isoDim < .02) continue;
 
     const ten  = tenureOf(a, gone ? a.leave : t);
@@ -859,7 +869,19 @@ function hit(mx,my){
     const [x,y]=proj(r.lon,r.lat);
     const d=Math.hypot(mx-x,my-y);
     const rad=Math.max(15, (starR(bookRevenue(r,S.t)) * pz)*2.2);
-    if (d<rad && d<bd){bd=d;best=i}
+    if (d<rad && d<bd){bd=d;best={type:'r', i};}
+    
+    if (S.vizMode === 'map') {
+      for (let j=0;j<r.advisers.length;j++) {
+        const a=r.advisers[j];
+        if (!arrivedAt(a,S.t) || goneAt(a,S.t)) continue;
+        const [mxp, myp] = proj(a.lon, a.lat);
+        const da = Math.hypot(mx-mxp, my-myp);
+        const ar = advR(revenueOf(a,S.t)) * pz;
+        const radA = Math.max(8, ar*4.0);
+        if (da<radA && da<bd) { bd=da; best={type:'a', i, j}; }
+      }
+    }
   }
   return best;
 }
@@ -914,10 +936,17 @@ cv.addEventListener('pointermove', e=>{
   S.hover=h;
   cv.style.cursor = S.isDragging ? 'grabbing' : (h!==null ? 'pointer':'default');
   if (h!==null && !S.isDragging){
-    const r=recruiters[h], dead=goneAt(r,S.t);
-    const act=r.advisers.filter(a=>aliveAt(a,S.t)).length;
-    const ten=dead ? (r.leave-r.join) : tenureOf(r,S.t);
-    tip.innerHTML = `<b>${r.name}</b><span>${ten} mo tenure · ${dead?'collapsed · ':''}${act} in orbit · ${money(bookRevenue(r,S.t))}</span>`;
+    if (h.type === 'r') {
+      const r=recruiters[h.i], dead=goneAt(r,S.t);
+      const act=r.advisers.filter(a=>aliveAt(a,S.t)).length;
+      const ten=dead ? (r.leave-r.join) : tenureOf(r,S.t);
+      tip.innerHTML = `<b>${r.name}</b><span>${ten} mo tenure · ${dead?'collapsed · ':''}${act} in orbit · ${money(bookRevenue(r,S.t))}</span>`;
+    } else {
+      const r=recruiters[h.i], a=r.advisers[h.j];
+      const dead = goneAt(a, S.t);
+      const ten = dead ? (a.leave-a.join) : tenureOf(a,S.t);
+      tip.innerHTML = `<b>${a.id}</b><span>${ten} mo tenure · Channel ${CH[a.ch]} · ${money(revenueOf(a,S.t))}</span>`;
+    }
     tip.style.left=e.clientX+'px'; tip.style.top=e.clientY+'px';
     tip.classList.add('on');
   } else tip.classList.remove('on');
@@ -946,43 +975,73 @@ function money(v){
 }
 function renderInsp(){
   if (S.sel===null) return;
-  const r=recruiters[S.sel], t=S.t, dead=goneAt(r,t);
-  const act=r.advisers.filter(a=>aliveAt(a,t));
-  const left=r.advisers.filter(a=>goneAt(a,t));
-  const arrived=r.advisers.filter(a=>arrivedAt(a,t));
-  const rev=bookRevenue(r,t);
-  const mix=channelMix(r,t);
-  const tot=mix.reduce((a,b)=>a+b,0)||1;
+  const t=S.t;
+  
+  if (S.sel.type === 'r') {
+    const r=recruiters[S.sel.i], dead=goneAt(r,t);
+    const act=r.advisers.filter(a=>aliveAt(a,t));
+    const left=r.advisers.filter(a=>goneAt(a,t));
+    const arrived=r.advisers.filter(a=>arrivedAt(a,t));
+    const rev=bookRevenue(r,t);
+    const mix=channelMix(r,t);
+    const tot=mix.reduce((a,b)=>a+b,0)||1;
 
-  document.getElementById('iCat').textContent=r.id;
-  document.getElementById('iName').textContent=r.name;
-  const st=document.getElementById('iStatus');
-  st.className='st '+(dead?'dead':'live');
-  st.textContent = dead ? `Collapsed · ${stampFor(r.leave)}` : `Active · ${tenureOf(r,t)} months`;
+    document.getElementById('iCat').textContent=r.id;
+    document.getElementById('iName').textContent=r.name;
+    const st=document.getElementById('iStatus');
+    st.className='st '+(dead?'dead':'live');
+    st.textContent = dead ? `Collapsed · ${stampFor(r.leave)}` : `Active · ${tenureOf(r,t)} months`;
 
-  const held = dead ? act.length : null;
-  document.getElementById('iRows').innerHTML = `
-    <dt>Tenure</dt><dd>${dead ? (r.leave-r.join) : tenureOf(r,t)} mo</dd>
-    <dt>Book introduced</dt><dd>${money(rev)}</dd>
-    <dt>Advisers recruited</dt><dd>${arrived.length}</dd>
-    <dt>In orbit</dt><dd>${act.length}</dd>
-    <dt>Ejected</dt><dd>${left.length}</dd>
-    <dt>Retention</dt><dd>${arrived.length?Math.round(100*act.length/arrived.length):0}%</dd>
-    <dt>Median orbit</dt><dd>${med(act.map(a=>tenureOf(a,t)))} mo</dd>`;
+    const held = dead ? act.length : null;
+    document.getElementById('iRows').innerHTML = `
+      <dt>Tenure</dt><dd>${dead ? (r.leave-r.join) : tenureOf(r,t)} mo</dd>
+      <dt>Book introduced</dt><dd>${money(rev)}</dd>
+      <dt>Advisers recruited</dt><dd>${arrived.length}</dd>
+      <dt>In orbit</dt><dd>${act.length}</dd>
+      <dt>Ejected</dt><dd>${left.length}</dd>
+      <dt>Retention</dt><dd>${arrived.length?Math.round(100*act.length/arrived.length):0}%</dd>
+      <dt>Median orbit</dt><dd>${med(act.map(a=>tenureOf(a,t)))} mo</dd>`;
 
-  document.getElementById('iMix').innerHTML = mix.map((v,i)=>
-    v>0 ? `<div style="flex:${v/tot};background:${chColour(i)};box-shadow:0 0 6px ${chColour(i)}"></div>` : ''
-  ).join('') || '<div style="flex:1;background:#1a2236"></div>';
+    document.getElementById('iMix').innerHTML = mix.map((v,i)=>
+      v>0 ? `<div style="flex:${v/tot};background:${chColour(i)};box-shadow:0 0 6px ${chColour(i)}"></div>` : ''
+    ).join('') || '<div style="flex:1;background:#1a2236"></div>';
 
-  const top = mix.indexOf(Math.max(...mix));
-  const conc = starTint(r,t).conc;
-  let note;
-  if (dead && held===0) note = 'Total collapse. The recruiter left and nothing held orbit — the territory went dark with them.';
-  else if (dead && held>0) note = `${held} of ${arrived.length} held orbit after the collapse. The book outlived the recruiter.`;
-  else if (conc>.62) note = `Burns almost pure Channel ${CH[top]} — a specialist pipeline, and a single point of failure.`;
-  else if (conc<.42) note = 'Burns white: revenue spread evenly across channels. No single pipeline to lose.';
-  else note = `Leans Channel ${CH[top]}, with a working spread behind it.`;
-  document.getElementById('iNote').textContent=note;
+    const top = mix.indexOf(Math.max(...mix));
+    const conc = starTint(r,t).conc;
+    let note;
+    if (dead && held===0) note = 'Total collapse. The recruiter left and nothing held orbit — the territory went dark with them.';
+    else if (dead && held>0) note = `${held} of ${arrived.length} held orbit after the collapse. The book outlived the recruiter.`;
+    else if (conc>.62) note = `Burns almost pure Channel ${CH[top]} — a specialist pipeline, and a single point of failure.`;
+    else if (conc<.42) note = 'Burns white: revenue spread evenly across channels. No single pipeline to lose.';
+    else note = `Leans Channel ${CH[top]}, with a working spread behind it.`;
+    document.getElementById('iNote').textContent=note;
+  } else {
+    const r=recruiters[S.sel.i], a=r.advisers[S.sel.j];
+    const dead = goneAt(a, t);
+    const ten = dead ? (a.leave - a.join) : tenureOf(a, t);
+    
+    document.getElementById('iCat').textContent='Channel ' + CH[a.ch];
+    document.getElementById('iName').textContent=a.id;
+    const st=document.getElementById('iStatus');
+    st.className='st '+(dead?'dead':'live');
+    st.textContent = dead ? `Ejected · ${stampFor(a.leave)}` : `Active · ${ten} months`;
+    
+    document.getElementById('iRows').innerHTML = `
+      <dt>Recruiter</dt><dd>${r.name}</dd>
+      <dt>Tenure</dt><dd>${ten} mo</dd>
+      <dt>Book introduced</dt><dd>${money(revenueOf(a,t))}</dd>
+      <dt>Join Date</dt><dd>${stampFor(a.join)}</dd>
+      <dt>Gross Rate</dt><dd>${money(a.rate)} / mo</dd>
+    `;
+    
+    document.getElementById('iMix').innerHTML = `<div style="flex:1;background:${chColour(a.ch)};box-shadow:0 0 6px ${chColour(a.ch)}"></div>`;
+    
+    let note = '';
+    if (a.distant) note = `Cross-territory hire! Operating out of jurisdiction but tethered to ${r.name}.`;
+    else if (dead) note = `Slipped orbit after ${ten} months.`;
+    else note = `Maintaining stable orbit around ${r.name}.`;
+    document.getElementById('iNote').textContent=note;
+  }
 
   insp.classList.add('on');
 }
