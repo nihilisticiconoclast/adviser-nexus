@@ -267,6 +267,10 @@ h1 em{font-style:italic;color:var(--accent)}
          <span class="num" id="ewDeadA">0</span>
          <span class="lbl">Ejected Advisers</span>
        </button>
+       <button class="ew-btn" id="btnDistant" aria-pressed="false">
+         <span class="num" id="ewDistant">0</span>
+         <span class="lbl">Cross-Territory</span>
+       </button>
      </div>
   </div>
 </div>
@@ -509,6 +513,7 @@ if (recruiters.length > 2) {
     }
     if (!valid) { a.lat = r2.lat; a.lon = r2.lon; }
     a.distant = true;
+    a.leave = null; // Ensure this anomaly persists for the whole timeline
   }
 }
 
@@ -729,17 +734,22 @@ function draw(ts){
   // ---- early warning counts
   let deadRCount = 0;
   let deadACount = 0;
+  let distCount = 0;
   for (const r of recruiters) {
     if (arrivedAt(r, t)) {
       if (goneAt(r, t)) deadRCount++;
       for (const a of r.advisers) {
-        if (arrivedAt(a, t) && goneAt(a, t)) deadACount++;
+        if (arrivedAt(a, t)) {
+          if (goneAt(a, t)) deadACount++;
+          if (a.distant) distCount++;
+        }
       }
     }
   }
   ewDeadR.textContent = deadRCount;
   ewDeadA.textContent = deadACount;
-  ewTotalBadge.textContent = deadRCount + deadACount;
+  ewDistant.textContent = distCount;
+  ewTotalBadge.textContent = deadRCount + deadACount + distCount;
 
   // ---- warning overlay for uncovered areas
   const pz = Math.pow(S.zoom, 0.45);
@@ -784,6 +794,10 @@ function draw(ts){
       if (S.sel.type === 'a' && S.sel.i !== i) alpha = 0.34;
     }
     if (S.warningActive === 'dead-r' && !goneAt(recruiters[i], t)) alpha *= 0.15;
+    if (S.warningActive === 'distant') {
+      const hasDistant = recruiters[i].advisers.some(a => a.distant && arrivedAt(a, t));
+      if (!hasDistant) alpha *= 0.15;
+    }
     drawSystem(recruiters[i], t, alpha);
   }
   cx.restore();
@@ -844,6 +858,7 @@ function drawSystem(r, t, alpha){
       cx.save();
       let orbAlpha = alpha * (gone ? .13 : .23);
       if (S.warningActive === 'dead-a' && gone) orbAlpha = alpha * 0.45;
+      if (S.warningActive === 'distant' && !a.distant) orbAlpha *= 0.15;
       cx.globalAlpha = orbAlpha;
       cx.strokeStyle = gone ? 'rgba(150,160,180,1)' : `rgba(${tint.r},${tint.g},${tint.b},1)`;
       cx.lineWidth = .55;
@@ -911,7 +926,11 @@ function drawSystem(r, t, alpha){
   }
 
   // ---------- the star ----------
-  const starDim = (S.warningActive === 'dead-a') ? 0.15 : 1;
+  let starDim = (S.warningActive === 'dead-a') ? 0.15 : 1;
+  if (S.warningActive === 'distant') {
+    const hasDistant = r.advisers.some(a => a.distant && arrivedAt(a, t));
+    if (!hasDistant) starDim *= 0.15;
+  }
   if (!dead){
     const sp = glow(tint.r,tint.g,tint.b);
     blob(cx, x, y, R*4.5, sp, alpha*starDim*.08);
@@ -934,6 +953,8 @@ function drawSystem(r, t, alpha){
       if (!goneAt(r, t)) isoDim *= 0.15;
     } else if (S.warningActive === 'dead-a') {
       if (!gone) isoDim *= 0.15;
+    } else if (S.warningActive === 'distant') {
+      if (!a.distant) isoDim *= 0.15;
     }
     if (isoDim<1 && S.isolate!==null && a.ch!==S.isolate && alpha*isoDim < .02) continue;
 
@@ -1285,6 +1306,8 @@ const ewDeadA = document.getElementById('ewDeadA');
 const btnUncovered = document.getElementById('btnUncovered');
 const btnDeadR = document.getElementById('btnDeadR');
 const btnDeadA = document.getElementById('btnDeadA');
+const btnDistant = document.getElementById('btnDistant');
+const ewDistant = document.getElementById('ewDistant');
 
 ewToggle.onclick = () => {
   const isExp = ewContainer.getAttribute('data-expanded') === 'true';
@@ -1295,13 +1318,15 @@ function setWarning(type) {
   btnUncovered.setAttribute('aria-pressed', S.warningActive === 'uncovered');
   btnDeadR.setAttribute('aria-pressed', S.warningActive === 'dead-r');
   btnDeadA.setAttribute('aria-pressed', S.warningActive === 'dead-a');
-  if (S.warningActive === 'uncovered') {
+  btnDistant.setAttribute('aria-pressed', S.warningActive === 'distant');
+  if (S.warningActive === 'uncovered' || S.warningActive === 'distant') {
     S.vizMode = 'map'; bMO.setAttribute('aria-pressed','false'); bMM.setAttribute('aria-pressed','true');
   }
 }
 btnUncovered.onclick = () => setWarning('uncovered');
 btnDeadR.onclick = () => setWarning('dead-r');
 btnDeadA.onclick = () => setWarning('dead-a');
+btnDistant.onclick = () => setWarning('distant');
 
 /* ---------- timeline ---------- */
 const scrub=document.getElementById('scrub'), stampEl=document.getElementById('stamp');
