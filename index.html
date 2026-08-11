@@ -717,14 +717,14 @@ function draw(ts){
 
   // ---- graticule
   if (S.showGrid){
-    cx.save(); cx.strokeStyle='rgba(120,150,200,.062)'; cx.lineWidth=.5;
+    cx.save(); cx.strokeStyle='rgba(120,150,200,.15)'; cx.lineWidth=.5;
     for (let la=50; la<=61; la+=2){
       cx.beginPath(); cx.moveTo(...proj(BOUNDS.w,la)); cx.lineTo(...proj(BOUNDS.e,la)); cx.stroke();
     }
     for (let lo=-10; lo<=2; lo+=2){
       cx.beginPath(); cx.moveTo(...proj(lo,BOUNDS.s)); cx.lineTo(...proj(lo,BOUNDS.n)); cx.stroke();
     }
-    cx.fillStyle='rgba(120,150,200,.30)'; cx.font='8px "IBM Plex Mono",monospace';
+    cx.fillStyle='rgba(120,150,200,.60)'; cx.font='8px "IBM Plex Mono",monospace';
     for (let la=50; la<=60; la+=2){
       const p=proj(BOUNDS.w,la); cx.fillText(la+'°N', p[0]+4, p[1]-3);
     }
