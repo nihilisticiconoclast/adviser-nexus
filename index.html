@@ -842,7 +842,9 @@ function drawSystem(r, t, alpha){
       if (S.isolate!==null && a.ch!==S.isolate) continue;
       
       cx.save();
-      cx.globalAlpha = alpha * (gone ? .13 : .23);
+      let orbAlpha = alpha * (gone ? .13 : .23);
+      if (S.warningActive === 'dead-a' && gone) orbAlpha = alpha * 0.45;
+      cx.globalAlpha = orbAlpha;
       cx.strokeStyle = gone ? 'rgba(150,160,180,1)' : `rgba(${tint.r},${tint.g},${tint.b},1)`;
       cx.lineWidth = .55;
       if (gone) cx.setLineDash([1.5,4.5]);           // the gap it left
@@ -960,7 +962,8 @@ function drawSystem(r, t, alpha){
       let px, py, ea, escape;
       const since = t - a.leave;                      // months since departure
       const k = Math.min(1, since/16);
-      const fade = Math.max(0, 1-k) * .55 + .06;
+      let fade = Math.max(0, 1-k) * .55 + .06;
+      if (S.warningActive === 'dead-a') fade = 1.0;
       const dr = cr*.42+120, dg = cg*.42+124, db = cb*.42+132;   // drained of colour
       const sp = glow(dr|0,dg|0,db|0);
 
