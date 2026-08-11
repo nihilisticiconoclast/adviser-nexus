@@ -218,7 +218,6 @@ h1 em{font-style:italic;color:var(--accent)}
     <dl class="enc">
       <dt>Position</dt><dd>Territory centroid<small>lat / lon of the recruiter's patch</small></dd>
       <dt>Star size</dt><dd>Revenue introduced<small>gross, cumulative to date</small></dd>
-      <dt>Brightness</dt><dd>Recruiter tenure<small>corona widens as service accrues</small></dd>
       <dt>Orbit</dt><dd>Adviser tenure<small>long service pulls in tight</small></dd>
       <dt>Hue</dt><dd>Joiner channel<small>star colour = its book's blend</small></dd>
       <dt>Collapse</dt><dd>Recruiter left<small>black hole; orbits persist</small></dd>
@@ -433,6 +432,7 @@ const proj = (lon,lat) => [PX + lon*SC*KX, PY - lat*SC];
 let mapLayer=null, dustPts=[], bgStars=[];
 
 function fit(){
+  S.panX = 0; S.panY = 0; S.zoom = 1;
   DPR = Math.min(2, window.devicePixelRatio||1);
   W = cv.clientWidth; H = cv.clientHeight;
   cv.width = W*DPR; cv.height = H*DPR;
@@ -586,7 +586,8 @@ function blob(cvx,x,y,rad,col,alpha){
 const S = {
   t: MONTHS-1, playing:false, tf:MONTHS-1,
   showDeparted:true, showOrbits:true, showLabels:false, showGrid:true,
-  isolate:null, hover:null, sel:null, mx:-1, my:-1
+  isolate:null, hover:null, sel:null, mx:-1, my:-1,
+  panX:0, panY:0, zoom:1, isDragging:false, dragDist:0
 };
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -612,6 +613,11 @@ function draw(ts){
   const vg = cx.createRadialGradient(W*0.42,H*0.44,0,W*0.42,H*0.44,Math.max(W,H)*.72);
   vg.addColorStop(0,'rgba(18,26,48,.85)'); vg.addColorStop(.55,'rgba(9,13,26,.5)'); vg.addColorStop(1,'rgba(3,4,9,0)');
   cx.fillStyle=vg; cx.fillRect(0,0,W,H);
+
+  cx.save();
+  cx.translate(W/2 + S.panX, H/2 + S.panY);
+  cx.scale(S.zoom, S.zoom);
+  cx.translate(-W/2, -H/2);
 
   // ---- background stars
   cx.save();
@@ -681,6 +687,7 @@ function draw(ts){
     cx.restore();
   }
 
+  cx.restore();
   requestAnimationFrame(draw);
 }
 
@@ -748,21 +755,9 @@ function drawSystem(r, t, alpha){
   // ---------- the star ----------
   if (!dead){
     const sp = glow(tint.r,tint.g,tint.b);
-    blob(cx, x, y, R*6.0*(.5+L*.7), sp, alpha*.085*L);
-    blob(cx, x, y, R*2.7,          sp, alpha*(.22+L*.30));
-    blob(cx, x, y, R*1.10,         sp, alpha*(.50+L*.45));
-    // diffraction spikes widen with luminosity — the tell for a long-serving recruiter
-    if (L>.36){
-      cx.save();
-      cx.globalAlpha = alpha*(L-.32)*.55;
-      cx.strokeStyle = `rgba(${tint.r},${tint.g},${tint.b},1)`;
-      cx.lineWidth=.6;
-      const s = R*(1.8+L*2.6);
-      cx.beginPath();
-      cx.moveTo(x-s,y); cx.lineTo(x+s,y); cx.moveTo(x,y-s*.78); cx.lineTo(x,y+s*.78);
-      cx.stroke();
-      cx.restore();
-    }
+    blob(cx, x, y, R*4.5, sp, alpha*.08);
+    blob(cx, x, y, R*2.7, sp, alpha*.25);
+    blob(cx, x, y, R*1.10, sp, alpha*.60);
   } else {
     drawBlackHole(x,y,R,spin,alpha*(0.42+0.58*Math.exp(-(t-r.leave)/20)),r);
   }
@@ -873,29 +868,75 @@ function hit(mx,my){
     if (!arrivedAt(r,S.t)) continue;
     const [x,y]=proj(r.lon,r.lat);
     const d=Math.hypot(mx-x,my-y);
-    const rad=Math.max(15, starR(bookRevenue(r,S.t))*2.2);
+    const rad=Math.max(15 / S.zoom, starR(bookRevenue(r,S.t))*2.2);
     if (d<rad && d<bd){bd=d;best=i}
   }
   return best;
 }
 
+function clampPan() {
+  const maxPanX = (S.zoom - 1) * W / 2;
+  const maxPanY = (S.zoom - 1) * H / 2;
+  S.panX = Math.max(-maxPanX, Math.min(S.panX, maxPanX));
+  S.panY = Math.max(-maxPanY, Math.min(S.panY, maxPanY));
+}
+
+let lastX=0, lastY=0;
+cv.addEventListener('pointerdown', e => {
+  if (e.button === 0) {
+    S.isDragging = true; S.dragDist = 0;
+    lastX = e.clientX; lastY = e.clientY;
+    cv.setPointerCapture(e.pointerId);
+  }
+});
+
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const ds = e.deltaY < 0 ? 1.1 : (1/1.1);
+  const ox = e.clientX - W/2 - S.panX;
+  const oy = e.clientY - H/2 - S.panY;
+  S.zoom = Math.max(1, Math.min(S.zoom * ds, 12));
+  if (S.zoom >= 1 && S.zoom <= 12) {
+    S.panX -= ox * (ds - 1);
+    S.panY -= oy * (ds - 1);
+  }
+  clampPan();
+}, {passive:false});
+
+cv.addEventListener('pointerup', e => { S.isDragging = false; cv.releasePointerCapture(e.pointerId); });
+cv.addEventListener('pointercancel', e => { S.isDragging = false; });
+
 const tip = document.getElementById('tip');
 cv.addEventListener('pointermove', e=>{
+  if (S.isDragging) {
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    S.dragDist += Math.hypot(dx,dy);
+    S.panX += dx; S.panY += dy;
+    lastX = e.clientX; lastY = e.clientY;
+    clampPan();
+  }
+  
   S.mx=e.clientX; S.my=e.clientY;
-  const h = hit(e.clientX,e.clientY);
+  const ux = (e.clientX - W/2 - S.panX)/S.zoom + W/2;
+  const uy = (e.clientY - H/2 - S.panY)/S.zoom + H/2;
+  const h = hit(ux,uy);
   S.hover=h;
-  cv.style.cursor = h!==null ? 'pointer':'default';
-  if (h!==null){
+  cv.style.cursor = S.isDragging ? 'grabbing' : (h!==null ? 'pointer':'default');
+  if (h!==null && !S.isDragging){
     const r=recruiters[h], dead=goneAt(r,S.t);
     const act=r.advisers.filter(a=>aliveAt(a,S.t)).length;
-    tip.innerHTML = `<b>${r.name}</b><span>${dead?'collapsed · ':''}${act} in orbit · ${money(bookRevenue(r,S.t))}</span>`;
+    const ten=dead ? (r.leave-r.join) : tenureOf(r,S.t);
+    tip.innerHTML = `<b>${r.name}</b><span>${ten} mo tenure · ${dead?'collapsed · ':''}${act} in orbit · ${money(bookRevenue(r,S.t))}</span>`;
     tip.style.left=e.clientX+'px'; tip.style.top=e.clientY+'px';
     tip.classList.add('on');
   } else tip.classList.remove('on');
 });
-cv.addEventListener('pointerleave', ()=>{S.hover=null;tip.classList.remove('on')});
+cv.addEventListener('pointerleave', ()=>{S.hover=null;tip.classList.remove('on');S.isDragging=false;});
 cv.addEventListener('click', e=>{
-  const h=hit(e.clientX,e.clientY);
+  if (S.dragDist > 5) return;
+  const ux = (e.clientX - W/2 - S.panX)/S.zoom + W/2;
+  const uy = (e.clientY - H/2 - S.panY)/S.zoom + H/2;
+  const h=hit(ux,uy);
   if (h===null){ closeInsp(); return; }
   S.sel=h; renderInsp();
 });
