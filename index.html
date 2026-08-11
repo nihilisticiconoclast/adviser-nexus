@@ -365,8 +365,8 @@ TURFS.forEach((tf,i) => {
       rate: lnorm(Math.log(9200*cd.rev), .62, 1500, 62000),  // £ gross introduced per month
       ph: rr(0,Math.PI*2),
       dir: rnd()<.14 ? -1 : 1,
-      wob: rr(.82,1.18),
-      tilt: rr(.42,.80)                                       // orbital inclination → ellipse squash
+      wob: 1.0,
+      tilt: 1.0                                               // perfect circular electron orbits
     });
   }
   recruiters.push({
@@ -427,9 +427,12 @@ const BOUNDS = {w:-10.9, e:2.3, s:49.6, n:61.2};
 let PX=0, PY=0, SC=1;                        // projection: x = PX + lon*SC*kx ; y = PY - lat*SC
 const KX = Math.cos(54.6*Math.PI/180);
 
-const proj = (lon,lat) => [PX + lon*SC*KX, PY - lat*SC];
+const proj = (lon,lat) => [
+  W/2 + S.panX + (PX + lon*SC*KX - W/2)*S.zoom,
+  H/2 + S.panY + (PY - lat*SC - H/2)*S.zoom
+];
 
-let mapLayer=null, dustPts=[], bgStars=[];
+let bgStars=[];
 
 function fit(){
   S.panX = 0; S.panY = 0; S.zoom = 1;
@@ -449,7 +452,6 @@ function fit(){
   PX = cxp - ((BOUNDS.w+BOUNDS.e)/2)*SC*KX;
   PY = padT + (availH-mapH)/2 + BOUNDS.n*SC;
 
-  buildMapLayer();
   buildBackground();
 }
 
@@ -460,93 +462,7 @@ function ringPath(ctx, flat, closeIt=true){
   if (closeIt) ctx.closePath();
 }
 
-function buildMapLayer(){
-  const c = document.createElement('canvas');
-  c.width = W*DPR; c.height = H*DPR;
-  const g = c.getContext('2d');
-  g.setTransform(DPR,0,0,DPR,0,0);
 
-  // A stroked coast, blurred at four radii. Blurring the *edge* rather than the
-  // filled shape leaves the interior open — fog off the coastline, not a flat country.
-  const edge = document.createElement('canvas');
-  edge.width=W*DPR; edge.height=H*DPR;
-  const s = edge.getContext('2d');
-  s.setTransform(DPR,0,0,DPR,0,0);
-  s.strokeStyle='#fff'; s.lineWidth=2.0; s.lineJoin='round'; s.lineCap='round';
-  s.beginPath();
-  for (const [k,rings] of Object.entries(UK)){
-    if (k==='Ireland') continue;
-    rings.forEach(r=>ringPath(s,r));
-  }
-  s.stroke();
-
-  const solid = document.createElement('canvas');
-  solid.width=W*DPR; solid.height=H*DPR;
-  const f = solid.getContext('2d');
-  f.setTransform(DPR,0,0,DPR,0,0);
-  f.fillStyle='#fff';
-  for (const [k,rings] of Object.entries(UK)){
-    if (k==='Ireland') continue;
-    f.beginPath(); rings.forEach(r=>ringPath(f,r)); f.fill();
-  }
-
-  const passes = [[30,.50],[14,.42],[6,.34],[2,.26]];
-  for (const [b,a] of passes){
-    g.save();
-    g.globalCompositeOperation='lighter';
-    g.globalAlpha=a;
-    if ('filter' in g) g.filter = `blur(${b}px)`;
-    g.drawImage(edge,0,0,W,H);
-    g.restore();
-  }
-  // the faintest possible body, so the land has mass without becoming a shape
-  g.save();
-  g.globalCompositeOperation='lighter'; g.globalAlpha=.055;
-  if ('filter' in g) g.filter='blur(9px)';
-  g.drawImage(solid,0,0,W,H);
-  g.restore();
-  // tint the accumulated white haze cold
-  g.save();
-  g.globalCompositeOperation='source-atop';
-  const grd = g.createLinearGradient(0,0,0,H);
-  grd.addColorStop(0,'#3f6f9e'); grd.addColorStop(.5,'#4a7ba8'); grd.addColorStop(1,'#5d6ea8');
-  g.fillStyle=grd; g.fillRect(0,0,W,H);
-  g.restore();
-
-  // Ireland: present, but only as context
-  g.save(); g.globalAlpha=.20; g.strokeStyle='rgba(120,150,185,.55)'; g.lineWidth=.6;
-  g.beginPath(); UK['Ireland'].forEach(r=>ringPath(g,r)); g.stroke();
-  g.setLineDash([1,5]); g.stroke();
-  g.restore();
-
-  // hairline coast
-  g.save();
-  g.strokeStyle='rgba(186,216,240,.34)'; g.lineWidth=.55; g.lineJoin='round';
-  g.beginPath();
-  for (const [k,rings] of Object.entries(UK)){ if(k==='Ireland')continue; rings.forEach(r=>ringPath(g,r)); }
-  g.stroke();
-  g.restore();
-
-  mapLayer = c;
-
-  // stipple along the coast — the plate-grain that keeps it from looking vector
-  dustPts.length=0;
-  const R2 = mulberry32(77);
-  for (const [k,rings] of Object.entries(UK)){
-    if (k==='Ireland') continue;
-    for (const flat of rings){
-      for (let i=0;i<flat.length-2;i+=2){
-        const a=proj(flat[i],flat[i+1]), b=proj(flat[i+2],flat[i+3]);
-        const dx=b[0]-a[0], dy=b[1]-a[1], len=Math.hypot(dx,dy);
-        const n = Math.min(9, Math.floor(len/4));
-        for (let j=0;j<n;j++){
-          const t=R2(), nx=-dy/len, ny=dx/len, off=(R2()-.5)*7;
-          dustPts.push(a[0]+dx*t+nx*off, a[1]+dy*t+ny*off, .12+R2()*.44);
-        }
-      }
-    }
-  }
-}
 
 function buildBackground(){
   bgStars.length=0;
@@ -614,18 +530,39 @@ function draw(ts){
   vg.addColorStop(0,'rgba(18,26,48,.85)'); vg.addColorStop(.55,'rgba(9,13,26,.5)'); vg.addColorStop(1,'rgba(3,4,9,0)');
   cx.fillStyle=vg; cx.fillRect(0,0,W,H);
 
-  cx.save();
-  cx.translate(W/2 + S.panX, H/2 + S.panY);
-  cx.scale(S.zoom, S.zoom);
-  cx.translate(-W/2, -H/2);
-
   // ---- background stars
   cx.save();
+  cx.translate(S.panX * 0.1, S.panY * 0.1); // subtle parallax
   for (let i=0;i<bgStars.length;i+=4){
     const a = .18 + .34*Math.abs(Math.sin(clock*.35 + bgStars[i+3]));
     cx.fillStyle = `rgba(200,216,238,${a*bgStars[i+2]})`;
     cx.fillRect(bgStars[i], bgStars[i+1], bgStars[i+2], bgStars[i+2]);
   }
+  cx.restore();
+
+  // ---- glowing abstract landmass
+  cx.save();
+  cx.globalCompositeOperation='lighter';
+  cx.strokeStyle = 'rgba(120, 160, 220, 0.25)';
+  cx.lineWidth = 1.2;
+  cx.shadowBlur = 15;
+  cx.shadowColor = 'rgba(120, 180, 255, 0.7)';
+  cx.beginPath();
+  for (const [k,rings] of Object.entries(UK)){
+    if (k==='Ireland') continue;
+    rings.forEach(r=>ringPath(cx,r));
+  }
+  cx.stroke();
+  
+  cx.strokeStyle = 'rgba(180, 210, 245, 0.4)';
+  cx.lineWidth = 0.5;
+  cx.shadowBlur = 0;
+  cx.stroke();
+
+  cx.strokeStyle = 'rgba(80, 110, 150, 0.15)';
+  cx.beginPath();
+  UK['Ireland'].forEach(r=>ringPath(cx,r));
+  cx.stroke();
   cx.restore();
 
   // ---- graticule
@@ -643,15 +580,6 @@ function draw(ts){
     }
     cx.restore();
   }
-
-  // ---- landmass haze + coast stipple
-  if (mapLayer){ cx.save(); cx.globalCompositeOperation='lighter'; cx.drawImage(mapLayer,0,0,W,H); cx.restore(); }
-  cx.save();
-  for (let i=0;i<dustPts.length;i+=3){
-    cx.fillStyle=`rgba(178,208,235,${dustPts[i+2]*.40})`;
-    cx.fillRect(dustPts[i],dustPts[i+1],.9,.9);
-  }
-  cx.restore();
 
   // ---- systems
   const dimAll = S.sel !== null;
@@ -687,7 +615,6 @@ function draw(ts){
     cx.restore();
   }
 
-  cx.restore();
   requestAnimationFrame(draw);
 }
 
@@ -868,7 +795,7 @@ function hit(mx,my){
     if (!arrivedAt(r,S.t)) continue;
     const [x,y]=proj(r.lon,r.lat);
     const d=Math.hypot(mx-x,my-y);
-    const rad=Math.max(15 / S.zoom, starR(bookRevenue(r,S.t))*2.2);
+    const rad=Math.max(15, starR(bookRevenue(r,S.t))*2.2);
     if (d<rad && d<bd){bd=d;best=i}
   }
   return best;
@@ -917,9 +844,7 @@ cv.addEventListener('pointermove', e=>{
   }
   
   S.mx=e.clientX; S.my=e.clientY;
-  const ux = (e.clientX - W/2 - S.panX)/S.zoom + W/2;
-  const uy = (e.clientY - H/2 - S.panY)/S.zoom + H/2;
-  const h = hit(ux,uy);
+  const h = hit(e.clientX, e.clientY);
   S.hover=h;
   cv.style.cursor = S.isDragging ? 'grabbing' : (h!==null ? 'pointer':'default');
   if (h!==null && !S.isDragging){
@@ -934,9 +859,7 @@ cv.addEventListener('pointermove', e=>{
 cv.addEventListener('pointerleave', ()=>{S.hover=null;tip.classList.remove('on');S.isDragging=false;});
 cv.addEventListener('click', e=>{
   if (S.dragDist > 5) return;
-  const ux = (e.clientX - W/2 - S.panX)/S.zoom + W/2;
-  const uy = (e.clientY - H/2 - S.panY)/S.zoom + H/2;
-  const h=hit(ux,uy);
+  const h=hit(e.clientX, e.clientY);
   if (h===null){ closeInsp(); return; }
   S.sel=h; renderInsp();
 });
