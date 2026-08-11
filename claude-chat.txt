@@ -1,0 +1,53 @@
+I showed my boss the charge ringing project we worked on and he was impressed. Naturally his first question was how could we apply this to our job. I was thinking that we could borrow the idea of a nexus / galaxy representing the connection between all of the towers, methods, and performers, but with the recruiters problem. 
+
+I think geography is important, so it should be over a map of the UK, but I want it to be wispy and ethereal rather than an OS style map. 
+
+I’m imagining the recruiters as stars, with advisers they recruited in their orbit. 
+
+I need a way to visualise the tenure of the recruiter and the advisers - like the brightness of a star
+
+The amount of money the advisers and the recruiters have brought in, maybe their size?
+
+The tenure of the advisers, maybe their closeness to the sun
+
+And the category of joiner - call it a non descriptive category with 8 different options - that’s the one I can’t picture. 
+
+I imagine the stars sit on the centre latitude and longitude of the recruiters turf, and turn to black holes when they leave 
+
+I imagine recruiters turning to black holes when they leave - not sure how to visualise advisers leaving. 
+
+Can you mock something up?
+
+I'll build this. Let me check the design skill first, then get a real UK coastline so the geography is honest rather than sketched.Coastline verified. Now let me build it.Good bones, but badly blown out — the stars are swamping the map. Let me fix the scales.Selection dims everything too far, and the plate's overall too dark. Final luminosity pass plus a selection reticle.Isolation isn't dimming the stars themselves — which is the whole point of the filter. And the labels collide. Fixing both.Mobile's pinning the map to the top instead of centring it. Fixing the fit.Open it and press play — the 60-month scrub is the thing to show your boss. Real UK coastline (Natural Earth, simplified to ~2,100 points), synthetic book: 40 territories, ~180 advisers, £141m cumulative.
+
+**The two you couldn't picture**
+
+*The 8 categories → spectral class.* Astronomy already ships a categorical scale for stars: O B A F G K M, blue-white through red. That's seven, and it stretches to eight without strain. The reason it beats an arbitrary 8-colour palette is that it's a **ramp**, so even when you can't name a class you can read which end of it a territory sits at. I've built both, on a toggle, because there's a genuine trade-off and you should let him pick: Spectral reads as ordered but blurs classes D and E in the pale middle; Categorical names all eight cleanly but loses the ordering. My honest recommendation is Categorical for analysis, Spectral for the poster. Either way, 8 hues is at the edge of what anyone discriminates simultaneously — the real answer is clicking a class to isolate, which dims every star *in proportion to how little of its book comes from that channel*. That turns the filter into a map of where each channel actually lives, which is the more useful question anyway.
+
+*Advisers leaving → ejection, not collapse.* A black hole works for a recruiter because the **position persists**: the turf is still there, the gravity is still there, and the book may still orbit. An adviser leaving is the opposite — that mass is gone from the system. So they slip the orbit and drift outward on a fading tail, drained of colour, with the orbital track they used to hold drawn as a broken arc. You can still count what left and see the gap. I tried dimming-in-place first (reads as "poor performer", not "gone") and infall toward the star (implies the firm consumed them, and buries the mark at the centre where it's least visible).
+
+**What the rest encodes**
+
+| Fact | Channel |
+|---|---|
+| Turf | position, at the centroid |
+| Revenue introduced | star radius (√-scaled, normalised to the book) |
+| Recruiter tenure | luminosity — corona width and diffraction spikes |
+| Adviser tenure | orbital radius, long service pulling in tight |
+| Adviser revenue | body radius |
+| Joiner channel | hue |
+| Recruiter left | black hole, brightest when the loss is recent |
+
+The one addition I made without being asked: **a star's colour is the revenue-weighted blend of its advisers' channels.** A specialist recruiter burns a pure hue; a generalist burns white. It costs nothing to compute and it puts pipeline concentration risk on the map as a visual property rather than a table you have to go and look up. Click Thames Valley in the current data — it's almost pure Channel B, which the inspector calls out as a single point of failure.
+
+**Where this is weak, before he asks**
+
+- **Overplotting in the Midlands and South East.** Orbits pile into each other where turfs are close. Click-to-isolate mitigates it; genuinely fixing it needs either a cartogram (breaks the geography you wanted) or zoom.
+- **Three channels compete for the same visual budget.** Size, brightness and hue on one mark is a lot. Brightness is the weakest of the three — if you had to drop one, tenure is better served by a small ring or a numeral than by luminosity.
+- **A centroid is a fiction.** Everything sits at the middle of a turf, so the map shows allocation, not where advisers actually are.
+- **It's an overview, not an answer.** It's very good at "show me the shape of the estate" and bad at "is Cornwall above or below target" — that's the recruitment charts you already have.
+
+The obvious next step if he bites: swap the synthetic generator for a query against the real tables. The data contract is small — one row per recruiter with turf lat/lon, join and leave months; one row per adviser with recruiter ID, channel, join and leave months, and revenue. Everything else is derived.
+
+
+Ok great, let’s add a zoom so we don’t get too much overflow and change the brightness to a number in the pop up / hover box. Any other QOL?
